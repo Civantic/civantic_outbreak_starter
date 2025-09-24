@@ -1,0 +1,10 @@
+{
+  "name": "@civantic/ui",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "type": "module",
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "civantic-outbreak-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev:civantic": "pnpm --filter civantic-site dev",
+    "dev:outbreak": "pnpm --filter outbreakresponse dev",
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "prettier -w ."
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "prettier": "^3.3.2"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

@@ -1,0 +1,16 @@
+export const metadata = {
+  title: "Privacy · Civantic LLC",
+  alternates: { canonical: "/privacy" }
+}
+
+export default function PrivacyPage() {
+  return (
+    <section className="container py-16 md:py-24">
+      <div className="mx-auto max-w-3xl prose">
+        <h1>Privacy Policy</h1>
+        <p>This site collects only the information you provide via forms or checkout. We use this information to respond to inquiries and deliver purchased products.</p>
+        <p>If third-party checkout or analytics are used, their policies apply. Contact <a href="mailto:info@civanticllc.com">info@civanticllc.com</a> with any privacy questions.</p>
+      </div>
+    </section>
+  )
+}

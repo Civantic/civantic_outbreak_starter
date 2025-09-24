@@ -1,0 +1,7 @@
+{
+  "name": "@civantic/config",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "tailwind.config.ts",
+  "files": ["tailwind.config.ts", "tsconfig.base.json"]
+}

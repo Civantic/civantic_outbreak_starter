@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 255 255 255;
+  --fg: 17 24 39;
+  --muted: 107 114 128;
+  --card: 248 250 252;
+  --ring: 61 115 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 10 10 12;
+    --fg: 229 231 235;
+    --muted: 156 163 175;
+    --card: 20 22 26;
+    --ring: 99 128 255;
+  }
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  color: rgb(var(--fg));
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(61,115,255,0.08), transparent), radial-gradient(800px 400px at 10% 110%, rgba(61,115,255,0.06), transparent), rgb(var(--bg));
+  font-feature-settings: "liga" 1, "calt" 1;
+}
+
+.prose {
+  color: rgb(var(--fg));
+}
+
+.card {
+  background: rgb(var(--card));
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 1rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  border-radius: .75rem;
+  padding: .625rem 1rem;
+  font-weight: 600;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .2s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #3d73ff, #2456db);
+  color: white;
+  box-shadow: 0 8px 24px rgba(61,115,255,.25);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  border: 1px solid rgba(61,115,255,.35);
+  color: #1a3a8a;
+  background: rgba(61,115,255,.05);
+}
+
+.nav-link {
+  border-radius: .5rem;
+  padding: .5rem .75rem;
+}
+
+.nav-link:hover {
+  background: rgba(61,115,255,.08);
+}
