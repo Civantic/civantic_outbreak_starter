@@ -58,6 +58,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
           fetch(`/api/fsis?scope=US&months=${monthsBack}`,      { cache: "no-store" }).then(r => r.json()).catch(() => ({ data: [] })),
           fetch(`/api/wastewater?state=${abbr}&months=${monthsBack}`, { cache: "no-store" }).then(r => r.json()).catch(() => ({ series: [] }))
         ])
+
         if (!cancel) {
           const obRows: Outbreak[] = (ob.data || [])
             .map((x: any) => ({
@@ -70,7 +71,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
               deaths: Number(x.deaths || 0),
               source: x.source || "CDC NORS"
             }))
-            .filter(r => r.state === abbr)
+            .filter((r: Outbreak) => r.state === abbr)
 
           const fdaRows: Recall[] = (fda.data || [])
             .map((x: any) => ({
@@ -81,7 +82,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
               reason: x.reason || "",
               source: x.source || "FDA openFDA"
             }))
-            .filter(r => r.stateScope.includes(abbr) || r.stateScope.length > 40)
+            .filter((r: Recall) => r.stateScope.includes(abbr) || r.stateScope.length > 40)
 
           const fsisRows: Recall[] = (fsis.data || [])
             .map((x: any) => ({
@@ -92,7 +93,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
               reason: x.reason || "",
               source: x.source || "USDA-FSIS"
             }))
-            .filter(r => r.stateScope.includes(abbr) || r.stateScope.length > 40)
+            .filter((r: Recall) => r.stateScope.includes(abbr) || r.stateScope.length > 40)
 
           setOutbreaks(obRows)
           setRecallsFDA(fdaRows)
@@ -108,35 +109,36 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
     return () => { cancel = true }
   }, [abbr, monthsBack])
 
-  const recallsAll = useMemo(() => [...recallsFDA, ...recallsFSIS], [recallsFDA, recallsFSIS])
+  const recallsAll = useMemo<Recall[]>(() => [...recallsFDA, ...recallsFSIS], [recallsFDA, recallsFSIS])
 
-  const recentOutbreaks: Outbreak[] = useMemo(
-    () => [...outbreaks].sort((a, b) => +new Date(b.date) - +new Date(a.date)).slice(0, 20),
+  const recentOutbreaks = useMemo<Outbreak[]>(
+    () => [...outbreaks].sort((a: Outbreak, b: Outbreak) => +new Date(b.date) - +new Date(a.date)).slice(0, 20),
     [outbreaks]
   )
-  const recentRecalls: Recall[] = useMemo(
-    () => [...recallsAll].sort((a, b) => +new Date(b.date) - +new Date(a.date)).slice(0, 20),
+
+  const recentRecalls = useMemo<Recall[]>(
+    () => [...recallsAll].sort((a: Recall, b: Recall) => +new Date(b.date) - +new Date(a.date)).slice(0, 20),
     [recallsAll]
   )
 
   const wwBars = useMemo(() => {
-    const s = [...ww].sort((a, b) => +new Date(a.date) - +new Date(b.date)).slice(-12)
-    const max = Math.max(1, ...s.map(p => p.value || 0))
-    return s.map(p => ({ h: 4 + Math.round((p.value || 0) / max * 36) }))
+    const s = [...ww].sort((a: Pt, b: Pt) => +new Date(a.date) - +new Date(b.date)).slice(-12)
+    const max = Math.max(1, ...s.map((p: Pt) => p.value || 0))
+    return s.map((p: Pt) => ({ h: 4 + Math.round((p.value || 0) / max * 36) }))
   }, [ww])
 
   function exportCSV() {
     if (domain === "publicHealth") {
       const rows = [
         ["date","state","etiology","illnesses","hospitalizations","deaths","source"],
-        ...recentOutbreaks.map(r => [r.date, r.state, r.etiology || "", String(r.illnesses || 0), String(r.hospitalizations || 0), String(r.deaths || 0), r.source || ""])
+        ...recentOutbreaks.map((r: Outbreak) => [r.date, r.state, r.etiology || "", String(r.illnesses || 0), String(r.hospitalizations || 0), String(r.deaths || 0), r.source || ""])
       ]
       const url = URL.createObjectURL(new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv;charset=utf-8;" }))
       const a = document.createElement("a"); a.href = url; a.download = `outbreaks_${abbr}_${monthsBack}m.csv`; a.click(); URL.revokeObjectURL(url)
     } else {
       const rows = [
         ["date","states","product","reason","source","id"],
-        ...recentRecalls.map(r => [r.date, (r.stateScope || []).join("|"), r.product || "", r.reason || "", r.source || "", r.id])
+        ...recentRecalls.map((r: Recall) => [r.date, (r.stateScope || []).join("|"), r.product || "", r.reason || "", r.source || "", r.id])
       ]
       const url = URL.createObjectURL(new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv;charset=utf-8;" }))
       const a = document.createElement("a"); a.href = url; a.download = `recalls_${abbr}_${monthsBack}m.csv`; a.click(); URL.revokeObjectURL(url)
@@ -178,7 +180,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
                   {domain === "publicHealth" ? (
                     recentOutbreaks.length === 0 ? (
                       <div className="text-sm text-gray-500 py-3">No recent outbreaks.</div>
-                    ) : recentOutbreaks.map((r) => (
+                    ) : recentOutbreaks.map((r: Outbreak) => (
                       <div key={r.id} className="py-3 text-sm">
                         <div className="text-gray-500">{new Date(r.date).toLocaleDateString()} · {r.state}</div>
                         <div className="font-medium">{r.etiology || "Outbreak"}</div>
@@ -188,7 +190,7 @@ export default function StatePage({ params }: { params: { abbr: string } }) {
                   ) : (
                     recentRecalls.length === 0 ? (
                       <div className="text-sm text-gray-500 py-3">No recent recalls.</div>
-                    ) : recentRecalls.map((r) => (
+                    ) : recentRecalls.map((r: Recall) => (
                       <div key={r.id} className="py-3 text-sm">
                         <div className="text-gray-500">{new Date(r.date).toLocaleDateString()}</div>
                         <div className="flex items-center gap-2">
