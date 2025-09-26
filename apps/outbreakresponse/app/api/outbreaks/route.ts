@@ -4,23 +4,12 @@ import { NextResponse } from "next/server"
 const CDC = "https://data.cdc.gov/resource/5xkq-dg7x.json"
 
 function asNum(x:any){ const n = Number(x); return Number.isFinite(n) ? n : 0 }
-function monthDate(year:number, month:number){
-  return new Date(Date.UTC(year, Math.max(0, month-1), 1)).toISOString().slice(0,10)
-}
+function monthDate(year:number, month:number){ return new Date(Date.UTC(year, Math.max(0, month-1), 1)).toISOString().slice(0,10) }
 function mapRow(r:any, i:number){
   const y = asNum(r.year) || new Date().getFullYear()
   const m = asNum(r.month) || 1
   const state = String(r.state || r.reporting_state || "").toUpperCase()
-  return {
-    id: r.outbreak_id || r.incident_id || `nors-${i}`,
-    date: monthDate(y, m),
-    state,
-    etiology: r.etiology || "Unknown",
-    illnesses: asNum(r.illnesses || r.number_ill),
-    hospitalizations: asNum(r.hospitalizations || r.number_hospitalized),
-    deaths: asNum(r.deaths),
-    source: "CDC NORS"
-  }
+  return { id:r.outbreak_id||r.incident_id||`nors-${i}`, date:monthDate(y,m), state, etiology:r.etiology||"Unknown", illnesses:asNum(r.illnesses||r.number_ill), hospitalizations:asNum(r.hospitalizations||r.number_hospitalized), deaths:asNum(r.deaths), source:"CDC NORS" }
 }
 
 export async function GET(req: Request) {
@@ -28,8 +17,7 @@ export async function GET(req: Request) {
   const scope = (u.searchParams.get("scope") || "US").toUpperCase()
   const months = Math.max(1, Math.min(12, Number(u.searchParams.get("months") || 6)))
   const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth(), 1)
-  start.setMonth(start.getMonth() - months + 1)
+  const start = new Date(end.getFullYear(), end.getMonth(), 1); start.setMonth(start.getMonth() - months + 1)
 
   const url = new URL(CDC)
   url.searchParams.set("$select", "year,month,state,reporting_state,etiology,illnesses,hospitalizations,deaths,incident_id,outbreak_id")
