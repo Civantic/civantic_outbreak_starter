@@ -30,15 +30,21 @@ export async function GET(req:Request){
   if (process.env.CDC_APP_TOKEN) headers["X-App-Token"] = process.env.CDC_APP_TOKEN
 
   try {
-    const r = await fetch(url.toString(), { headers })
+    const r = await fetch(url.toString(), { headers, next: { revalidate: 300 } })
     const text = await r.text()
     if (!r.ok) {
-      return NextResponse.json({ series: [], error: true, errorDetail: `NWSS ${r.status}: ${text.slice(0,300)}`, fetchedAt: new Date().toISOString() }, { status: 502 })
+      const res = NextResponse.json({ series: [], error: true, errorDetail: `NWSS ${r.status}: ${text.slice(0,300)}`, fetchedAt: new Date().toISOString() }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
     const rows = JSON.parse(text) as any[]
     const series: Pt[] = (rows||[]).map(x => ({ date: String(x.date).slice(0,10), value: Number(x.value||0) }))
-    return NextResponse.json({ series, fetchedAt: new Date().toISOString() })
+    const res = NextResponse.json({ series, fetchedAt: new Date().toISOString() })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
   } catch (e:any) {
-    return NextResponse.json({ series: [], error: true, errorDetail: String(e?.message||e), fetchedAt: new Date().toISOString() }, { status: 502 })
+    const res = NextResponse.json({ series: [], error: true, errorDetail: String(e?.message||e), fetchedAt: new Date().toISOString() }, { status: 502 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
