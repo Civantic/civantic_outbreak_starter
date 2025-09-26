@@ -1,16 +1,7 @@
 "use client"
-
 import { useEffect, useState } from "react"
 
-type Row = {
-  key:string
-  label:string
-  status:"loading"|"live"|"fallback"|"error"
-  count:number
-  fetchedAt?:string
-  latencyMs?:number
-  detail?:string
-}
+type Row = { key:string; label:string; status:"loading"|"live"|"fallback"|"error"; count:number; fetchedAt?:string; latencyMs?:number; detail?:string }
 
 export default function StatusPage() {
   const [rows, setRows] = useState<Row[]>([])
@@ -28,7 +19,6 @@ export default function StatusPage() {
         return { label, status: "error" as const, count: 0, fetchedAt: "", latencyMs: Math.round(performance.now() - t0), detail: String(e?.message||e) }
       }
     }
-
     async function load() {
       const items = await Promise.all([
         ping("CDC NORS", async () => {
@@ -74,17 +64,7 @@ export default function StatusPage() {
           return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         })
       ])
-      if (!cancel) {
-        setRows(items.map((it, i) => ({
-          key: String(i),
-          label: it.label,
-          status: it.status,
-          count: it.count,
-          fetchedAt: it.fetchedAt,
-          latencyMs: it.latencyMs,
-          detail: it.detail
-        })))
-      }
+      if (!cancel) setRows(items.map((it,i)=>({ key:String(i), label:it.label, status:it.status, count:it.count, fetchedAt:it.fetchedAt, latencyMs:it.latencyMs, detail:it.detail })))
     }
     load()
     return () => { cancel = true }
@@ -102,7 +82,6 @@ export default function StatusPage() {
       <div className="mx-auto max-w-5xl">
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">System status</h1>
         <p className="mt-3 text-gray-600">Live data feeds, last updated times, and any error details.</p>
-
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <div className="card p-2 flex items-center gap-2">
             <span className="text-sm text-gray-600">Window</span>
@@ -112,9 +91,8 @@ export default function StatusPage() {
           </div>
           <button onClick={()=>setRefreshKey(k=>k+1)} className="btn btn-outline">Retry</button>
         </div>
-
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {rows.map((r)=>(
+          {rows.map(r=>(
             <div key={r.key} className="card p-4">
               <div className="flex items-center justify-between">
                 <div className="font-semibold">{r.label}</div>
