@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic'
-
 import { NextResponse } from "next/server"
 
 type Row = { id:string; date:string; stateScope:string[]; product:string; reason:string; source:string }
 
-const STATES: [string, string][] = [
+const STATES:[string,string][]= [
   ["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],
   ["FL","Florida"],["GA","Georgia"],["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],["KS","Kansas"],["KY","Kentucky"],
   ["LA","Louisiana"],["ME","Maine"],["MD","Maryland"],["MA","Massachusetts"],["MI","Michigan"],["MN","Minnesota"],["MS","Mississippi"],["MO","Missouri"],
@@ -13,7 +12,7 @@ const STATES: [string, string][] = [
   ["SC","South Carolina"],["SD","South Dakota"],["TN","Tennessee"],["TX","Texas"],["UT","Utah"],["VT","Vermont"],["VA","Virginia"],
   ["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"],["DC","District of Columbia"]
 ]
-const ALL = STATES.map(s => s[0])
+const ALL = STATES.map(s=>s[0])
 
 function toISO(s:any){
   s = String(s||"").trim()
@@ -22,7 +21,6 @@ function toISO(s:any){
   const m2 = s.match(/^(\d{8})$/); if (m2) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
   const d = new Date(s); return isNaN(+d) ? "" : d.toISOString().slice(0,10)
 }
-
 function parseStates(val:any){
   if (Array.isArray(val)) {
     const out = new Set<string>()
@@ -52,10 +50,12 @@ export async function GET(req: Request){
 
   try{
     const base = process.env.FSIS_API_URL || "https://www.fsis.usda.gov/fsis/api/recall/v/1"
-    const r = await fetch(base, { next: { revalidate: 3600 } })
+    const r = await fetch(base, { next: { revalidate: 300 } })
     if (!r.ok) {
       const txt = await r.text()
-      return NextResponse.json({ data: [], error: true, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` }, { status: 502 })
+      const res = NextResponse.json({ data: [], error: true, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
     const raw = await r.json() as any
     const list: any[] = Array.isArray(raw) ? raw : (raw.items || raw.results || [])
@@ -72,8 +72,12 @@ export async function GET(req: Request){
     rows = rows.filter(x => new Date(x.date) >= start && new Date(x.date) <= end)
     if (scope === "NM") rows = rows.filter(r => r.stateScope.includes("NM") || r.stateScope.length === ALL.length)
 
-    return NextResponse.json({ data: rows })
+    const res = NextResponse.json({ data: rows })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
   }catch(e:any){
-    return NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e) }, { status: 502 })
+    const res = NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e) }, { status: 502 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
