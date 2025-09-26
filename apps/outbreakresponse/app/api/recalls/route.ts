@@ -26,23 +26,22 @@ function parseStates(text:string){
 }
 
 export async function GET(req: Request){
-  const u=new URL(req.url)
-  const scope=(u.searchParams.get("scope")||"US").toUpperCase()
-  const months=Number(u.searchParams.get("months")||"6")
-  const cls=(u.searchParams.get("class")||"").toLowerCase().trim()
-  const pq=(u.searchParams.get("product_q")||"").toLowerCase().trim()
-  const stateParam=(u.searchParams.get("state")||"").toUpperCase().trim()
+  const u = new URL(req.url)
+  const scope = (u.searchParams.get("scope")||"US").toUpperCase()
+  const months = Number(u.searchParams.get("months")||"6")
+  const cls = (u.searchParams.get("class")||"").toLowerCase().trim()
+  const pq  = (u.searchParams.get("product_q")||"").toLowerCase().trim()
+  const stateParam = (u.searchParams.get("state")||"").toUpperCase().trim()
 
   const end=new Date(); const start=new Date(end); start.setMonth(end.getMonth()-months)
 
-  const qs = new URLSearchParams()
-  qs.set("search", `report_date:[${ymd(start)}+TO+${ymd(end)}]`)
-  qs.set("limit", "250")
-  const key = process.env.OPENFDA_API_KEY
-  if (key) qs.set("api_key", key)
+  // Build query string manually to avoid encoding quirks
+  const search = `report_date:[${ymd(start)} TO ${ymd(end)}]`
+  const key = process.env.OPENFDA_API_KEY ? `&api_key=${encodeURIComponent(process.env.OPENFDA_API_KEY as string)}` : ""
+  const url = `https://api.fda.gov/food/enforcement.json?search=${encodeURIComponent(search)}&limit=250${key}`
 
   try{
-    const r = await fetch(`https://api.fda.gov/food/enforcement.json?${qs.toString()}`, { next:{ revalidate:300 }})
+    const r = await fetch(url, { next:{ revalidate:300 }})
     const text = await r.text()
     if(!r.ok){
       const res = NextResponse.json({ data: [], error: true, errorDetail: `openFDA ${r.status}: ${text.slice(0,300)}` }, { status: 502 })
@@ -53,10 +52,10 @@ export async function GET(req: Request){
     const items: any[] = Array.isArray(j?.results) ? j.results : []
     let rows: Row[] = items.map((x:any) => {
       const states = parseStates(String(x.distribution_pattern || ""))
-      const date = x.report_date ? `${x.report_date.slice(0,4)}-${x.report_date.slice(4,6)}-${x.report_date.slice(6,8)}` : ""
+      const d = x.report_date ? `${x.report_date.slice(0,4)}-${x.report_date.slice(4,6)}-${x.report_date.slice(6,8)}` : ""
       return {
         id: x.recall_number || x.event_id || crypto.randomUUID(),
-        date,
+        date: d,
         stateScope: states,
         product: x.product_description || "",
         reason: x.reason_for_recall || "",
@@ -68,7 +67,7 @@ export async function GET(req: Request){
     if (scope === "NM") rows = rows.filter(r => r.stateScope.includes("NM") || r.stateScope.length === ALL.length)
     if (stateParam) rows = rows.filter(r => r.stateScope.includes(stateParam) || r.stateScope.length === ALL.length)
     if (cls) rows = rows.filter(r => String(r.classification||"").toLowerCase().includes(cls))
-    if (pq) rows = rows.filter(r => String(r.product||"").toLowerCase().includes(pq))
+    if (pq)  rows = rows.filter(r => String(r.product||"").toLowerCase().includes(pq))
 
     const res = NextResponse.json({ data: rows, fetchedAt: new Date().toISOString() })
     res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
