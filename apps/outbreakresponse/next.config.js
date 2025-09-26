@@ -2,8 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // TEMP: unblock Vercel while we finish TypeScript typing
+  // TEMP: keep this while we finish stabilizing TS build
   typescript: { ignoreBuildErrors: true }
 }
-
 module.exports = nextConfig
