@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from "next/server"
 
-
 type Row = {
   id: string
   date: string
