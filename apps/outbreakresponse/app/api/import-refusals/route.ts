@@ -1,5 +1,4 @@
 export const dynamic = 'force-dynamic'
-
 import { NextResponse } from "next/server"
 
 type Row = {
@@ -27,7 +26,9 @@ export async function GET(req: Request) {
   const endpoint = (process.env.FDA_DD_IMPORT_ENDPOINT || "import_refusals").trim()
 
   if (!authUser || !authKey) {
-    return NextResponse.json({ error: "Missing FDA_DD_AUTH_USER or FDA_DD_AUTH_KEY" }, { status: 400 })
+    const res = NextResponse.json({ error: "Missing FDA_DD_AUTH_USER or FDA_DD_AUTH_KEY" }, { status: 400 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 
   const base = `https://api-datadashboard.fda.gov/v1/${endpoint}`
@@ -45,8 +46,6 @@ export async function GET(req: Request) {
       RefusalDateFrom: [ymd(from)],
       RefusalDateTo:   [ymd(now)]
     },
-    // NOTE: These field names are case-sensitive and may vary by tenant.
-    // If DD returns “Invalid fieldname…”, adjust this list to your portal’s “Try It Out” names.
     columns: ["RefusalDate","FirmName","CountryName","ProductCode","FEINumber","RefusalCharges"]
   }
 
@@ -58,21 +57,20 @@ export async function GET(req: Request) {
   }
 
   try {
-    const r = await fetch(base, { method: "POST", headers, body: JSON.stringify(body), next: { revalidate: 600 } })
+    const r = await fetch(base, { method: "POST", headers, body: JSON.stringify(body), next: { revalidate: 300 } })
     const text = await r.text()
 
     let j: any
     try { j = JSON.parse(text) } catch {
-      return NextResponse.json({ data: [], error: true, errorDetail: `Non-JSON from DD: ${text.slice(0,300)}` }, { status: 502 })
+      const res = NextResponse.json({ data: [], error: true, errorDetail: `Non-JSON from DD: ${text.slice(0,300)}` }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
 
-    // Per DD docs, 400 “Success.” with { result:[…], resultcount:n }
     if (!r.ok || (j?.statuscode && j.statuscode !== 400)) {
-      return NextResponse.json({
-        data: [],
-        error: true,
-        errorDetail: `DD ${j?.statuscode ?? r.status}: ${j?.message ?? ""}`
-      }, { status: 502 })
+      const res = NextResponse.json({ data: [], error: true, errorDetail: `DD ${j?.statuscode ?? r.status}: ${j?.message ?? ""}` }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
 
     const result: any[] = Array.isArray(j?.result) ? j.result : []
@@ -87,8 +85,12 @@ export async function GET(req: Request) {
       source: "FDA-DD"
     }))
 
-    return NextResponse.json({ data, resultcount: j?.resultcount ?? data.length, fetchedAt: new Date().toISOString() })
+    const res = NextResponse.json({ data, resultcount: j?.resultcount ?? data.length, fetchedAt: new Date().toISOString() })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
   } catch (e: any) {
-    return NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e) }, { status: 502 })
+    const res = NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e) }, { status: 502 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
