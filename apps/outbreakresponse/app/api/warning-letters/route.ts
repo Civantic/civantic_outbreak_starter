@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from "next/server"
 
 type Row = { id:string; date:string; firm:string; subject:string; url:string; source:"FDA-WL" }
