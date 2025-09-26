@@ -1,6 +1,4 @@
 export const dynamic = 'force-dynamic'
-import { NextResponse } from "next/server"
-// ...rest of file unchanged
 
 import { NextResponse } from "next/server"
 
@@ -20,12 +18,9 @@ const ALL = STATES.map(s => s[0])
 function toISO(s:any){
   s = String(s||"").trim()
   if (!s) return ""
-  const m1 = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (m1) return `${m1[1]}-${m1[2]}-${m1[3]}`
-  const m2 = s.match(/^(\d{8})$/)
-  if (m2) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
-  const d = new Date(s)
-  return isNaN(+d) ? "" : d.toISOString().slice(0,10)
+  const m1 = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m1) return `${m1[1]}-${m1[2]}-${m1[3]}`
+  const m2 = s.match(/^(\d{8})$/); if (m2) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
+  const d = new Date(s); return isNaN(+d) ? "" : d.toISOString().slice(0,10)
 }
 
 function parseStates(val:any){
@@ -59,7 +54,6 @@ export async function GET(){
     const raw = await r.json() as any
     const list: any[] = Array.isArray(raw) ? raw : (raw.items || raw.results || [])
 
-    // heuristic: keep items that look like Public Health Alerts
     const alerts = list.filter((x:any) => {
       const tag = String(x.phasetxt || x.alert_type || x.type || "").toLowerCase()
       const title = String(x.title || x.summary || "").toLowerCase()
