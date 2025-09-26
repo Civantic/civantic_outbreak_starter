@@ -41,7 +41,7 @@ function parseStates(val:any){
   return Array.from(out)
 }
 
-async function fetchWithTimeout(url:string, ms=6500) {
+async function fetchWithTimeout(url:string, ms=12000) {
   const ctrl = new AbortController()
   const id = setTimeout(()=>ctrl.abort(), ms)
   try {
