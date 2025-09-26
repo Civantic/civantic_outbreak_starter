@@ -41,11 +41,13 @@ export async function GET(req: Request){
   const key = process.env.OPENFDA_API_KEY
   if (key) qs.set("api_key", key)
 
-  try {
-    const r = await fetch(`https://api.fda.gov/food/enforcement.json?${qs.toString()}`)
+  try{
+    const r = await fetch(`https://api.fda.gov/food/enforcement.json?${qs.toString()}`, { next:{ revalidate:300 }})
     const text = await r.text()
-    if (!r.ok) {
-      return NextResponse.json({ data: [], error: true, errorDetail: `openFDA ${r.status}: ${text.slice(0,300)}` }, { status: 502 })
+    if(!r.ok){
+      const res = NextResponse.json({ data: [], error: true, errorDetail: `openFDA ${r.status}: ${text.slice(0,300)}` }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
     const j = JSON.parse(text) as any
     const items: any[] = Array.isArray(j?.results) ? j.results : []
@@ -68,8 +70,12 @@ export async function GET(req: Request){
     if (cls) rows = rows.filter(r => String(r.classification||"").toLowerCase().includes(cls))
     if (pq) rows = rows.filter(r => String(r.product||"").toLowerCase().includes(pq))
 
-    return NextResponse.json({ data: rows, fetchedAt: new Date().toISOString() })
-  } catch (e:any) {
-    return NextResponse.json({ data: [], error: true, errorDetail: String(e?.message||e) }, { status: 502 })
+    const res = NextResponse.json({ data: rows, fetchedAt: new Date().toISOString() })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
+  }catch(e:any){
+    const res = NextResponse.json({ data: [], error: true, errorDetail: String(e?.message||e) }, { status: 502 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
