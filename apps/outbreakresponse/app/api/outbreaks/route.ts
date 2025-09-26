@@ -1,8 +1,7 @@
 export const dynamic = 'force-dynamic'
-import { NextResponse } from "next/server"
-// ...rest unchanged
 
 import { NextResponse } from "next/server"
+
 const CDC = "https://data.cdc.gov/resource/5xkq-dg7x.json"
 
 function n(x:any){const v=Number(x);return Number.isFinite(v)?v:0}
