@@ -1,7 +1,5 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
-// ...rest unchanged
-import { NextResponse } from "next/server"
 
 type Pt = { date: string; value: number }
 type In = { scope?: "US"|"NM"; state?: string; months?: number }
