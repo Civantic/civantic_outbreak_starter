@@ -1,3 +1,4 @@
+cat > 'apps/outbreakresponse/next.config.js' <<'JS'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -6,3 +7,4 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true }
 }
 module.exports = nextConfig
+JS
