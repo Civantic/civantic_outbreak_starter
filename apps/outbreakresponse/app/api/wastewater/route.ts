@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
-type Pt={date:string,value:number}
 
+type Pt={date:string,value:number}
 function iso(d:Date){ return d.toISOString().slice(0,10) }
 
 export async function GET(req:Request){
@@ -15,15 +15,17 @@ export async function GET(req:Request){
 
   const base = process.env.NWSS_API_URL || "https://data.cdc.gov/resource/2ew6-ywp6.json"
   const url = new URL(base)
+  // Many NWSS tables expose 'date' (not 'submission_date')
   const whereParts = [
-    `submission_date >= '${iso(start)}'`,
+    `date >= '${iso(start)}'`,
     `wastewater_percentile IS NOT NULL`,
     state ? `wwtp_jurisdiction='${state==="NM"?"New Mexico":state}'` : (scope==="NM" ? `wwtp_jurisdiction='New Mexico'` : "")
   ].filter(Boolean)
-  url.searchParams.set("$select", "submission_date as date, avg(wastewater_percentile) as value")
+
+  url.searchParams.set("$select", "date, avg(wastewater_percentile) as value")
   url.searchParams.set("$where", whereParts.join(" AND "))
-  url.searchParams.set("$group", "submission_date")
-  url.searchParams.set("$order", "submission_date")
+  url.searchParams.set("$group", "date")
+  url.searchParams.set("$order", "date")
   url.searchParams.set("$limit", String(months*60))
 
   const headers: Record<string,string> = {}
