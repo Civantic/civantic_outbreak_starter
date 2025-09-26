@@ -1,3 +1,7 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from "next/server"
+// ...rest unchanged
+
 import { NextResponse } from "next/server"
 import fs from "node:fs/promises"
 import path from "node:path"

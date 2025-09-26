@@ -1,3 +1,11 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from "next/server"
+// ...rest unchanged
+
+export const dynamic = 'force-dynamic'
+import { NextResponse } from "next/server"
+// ...rest unchanged
+
 import { NextResponse } from "next/server"
 
 type Row = {

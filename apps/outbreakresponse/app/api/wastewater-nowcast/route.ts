@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from "next/server"
+// ...rest unchanged
 import { NextResponse } from "next/server"
 
 type Pt = { date: string; value: number }

@@ -1,3 +1,7 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from "next/server"
+// ...rest of file unchanged
+
 import { NextResponse } from "next/server"
 
 type Row = { id:string; date:string; stateScope:string[]; product:string; summary:string; source:string }
