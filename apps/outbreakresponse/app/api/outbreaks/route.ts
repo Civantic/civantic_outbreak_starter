@@ -40,16 +40,22 @@ export async function GET(req: Request) {
   if (process.env.CDC_APP_TOKEN) headers["X-App-Token"] = process.env.CDC_APP_TOKEN
 
   try {
-    const r = await fetch(url.toString(), { headers })
+    const r = await fetch(url.toString(), { headers, next: { revalidate: 300 } })
     const text = await r.text()
     if (!r.ok) {
-      return NextResponse.json({ data: [], error: true, errorDetail: `CDC ${r.status}: ${text.slice(0,300)}`, fetchedAt: new Date().toISOString() }, { status: 502 })
+      const res = NextResponse.json({ data: [], error: true, errorDetail: `CDC ${r.status}: ${text.slice(0,300)}`, fetchedAt: new Date().toISOString() }, { status: 502 })
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
     const rows = JSON.parse(text) as any[]
     let data = rows.map(mapRow)
     if (scope === "NM") data = data.filter(d => d.state === "NM")
-    return NextResponse.json({ data, fetchedAt: new Date().toISOString() })
+    const res = NextResponse.json({ data, fetchedAt: new Date().toISOString() })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
   } catch (e:any) {
-    return NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e), fetchedAt: new Date().toISOString() }, { status: 502 })
+    const res = NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e), fetchedAt: new Date().toISOString() }, { status: 502 })
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
