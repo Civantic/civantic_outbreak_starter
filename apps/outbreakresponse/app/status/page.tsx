@@ -2,11 +2,18 @@
 
 import { useEffect, useState } from "react"
 
-type Row = { key:string; label:string; status:"loading"|"live"|"fallback"|"error"; count:number; fetchedAt?:string; latencyMs?:number; detail?:string }
+type Row = {
+  key:string
+  label:string
+  status:"loading"|"live"|"fallback"|"error"
+  count:number
+  fetchedAt?:string
+  latencyMs?:number
+  detail?:string
+}
 
 export default function StatusPage() {
   const [rows, setRows] = useState<Row[]>([])
-  const [auto, setAuto] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [months, setMonths] = useState(6)
 
@@ -17,88 +24,71 @@ export default function StatusPage() {
       try {
         const r = await fn()
         return { label, status: r.status, count: r.count, fetchedAt: r.fetchedAt, latencyMs: Math.round(performance.now() - t0), detail: r.detail }
-      } catch {
-        return { label, status: "error" as const, count: 0, fetchedAt: "", latencyMs: Math.round(performance.now() - t0) }
+      } catch (e:any) {
+        return { label, status: "error" as const, count: 0, fetchedAt: "", latencyMs: Math.round(performance.now() - t0), detail: String(e?.message||e) }
       }
     }
 
     async function load() {
       const items = await Promise.all([
         ping("CDC NORS", async () => {
-          const j = await fetch(`/api/outbreaks?scope=US&months=${months}`, { cache: "no-store" }).then(r=>r.json())
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          return { count:c, fetchedAt:j.fetchedAt, status:st }
+          const r = await fetch(`/api/outbreaks?scope=US&months=${months}`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("FDA openFDA", async () => {
-          const j = await fetch(`/api/recalls?scope=US&months=${months}`, { cache: "no-store" }).then(r=>r.json())
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          return { count:c, fetchedAt:j.fetchedAt, status:st }
+          const r = await fetch(`/api/recalls?scope=US&months=${months}`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("USDA FSIS", async () => {
-          const j = await fetch(`/api/fsis?scope=US&months=${months}`, { cache: "no-store" }).then(r=>r.json())
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          return { count:c, fetchedAt:j.fetchedAt, status:st }
+          const r = await fetch(`/api/fsis?scope=US&months=${months}`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("Wastewater (NWSS)", async () => {
-          const j = await fetch(`/api/wastewater?scope=US&months=${months}`, { cache: "no-store" }).then(r=>r.json())
-          const c = Array.isArray(j.series) ? j.series.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          return { count:c, fetchedAt:j.fetchedAt, status:st }
+          const r = await fetch(`/api/wastewater?scope=US&months=${months}`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.series) ? r.j.series.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("FDA Enforcement (IRES)", async () => {
-          const j = await fetch(`/api/fda-enforcement?months=${months}&classes=1,2,3,NC&center=CFSAN`, { cache: "no-store" }).then(async r => {
-            const t = await r.text()
-            try { return JSON.parse(t) } catch { return { error:true, errorDetail:t } }
-          })
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          const detail = j.errorDetail || j.body || ""
-          return { count:c, fetchedAt:j.fetchedAt, status:st, detail }
+          const r = await fetch(`/api/fda-enforcement?months=${months}&classes=1,2,3,NC&center=CFSAN`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("Import Refusals (FDA DD)", async () => {
-          const now = new Date()
-          const from = new Date(now.getFullYear(), now.getMonth(), 1); from.setMonth(from.getMonth() - months + 1)
-          const ymd = (d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`
-          const body = { start:1, rows:10, sort:"RefusalDate", sortorder:"DESC", filters:{ RefusalDateFrom:[ymd(from)], RefusalDateTo:[ymd(now)] }, columns:["RefusalDate","FirmName","CountryName","ProductCode","FEINumber"] }
-          const res = await fetch("/api/dd", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ endpoint:"import_refusals", body }) })
-          const j = await res.json()
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = res.ok ? "live" : "error"
-          const detail = j.error ? `${j.statuscode||""} ${j.message||""}` : ""
-          return { count:c, fetchedAt:new Date().toISOString(), status:st, detail }
+          const r = await fetch(`/api/import-refusals?months=${months}`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         }),
         ping("Adverse Events (CAERS)", async () => {
-          const j = await fetch(`/api/adverse-events?months=${months}&limit=50`, { cache: "no-store" }).then(r=>r.json())
-          const c = Array.isArray(j.data) ? j.data.length : 0
-          const st = j.error ? "error" : j.fallback ? "fallback" : "live"
-          return { count:c, fetchedAt:j.fetchedAt, status:st }
+          const r = await fetch(`/api/adverse-events?months=${months}&limit=50`).then(async res => ({ ok:res.ok, j: await res.json().catch(()=>({})) }))
+          const c = Array.isArray(r.j?.data) ? r.j.data.length : 0
+          const st = r.j?.error ? "error" : r.j?.fallback ? "fallback" : r.ok ? "live" : "error"
+          return { count:c, fetchedAt:r.j?.fetchedAt, status:st, detail:r.j?.errorDetail }
         })
       ])
-
       if (!cancel) {
-        const next: Row[] = items.map((it, idx) => ({
-          key: String(idx),
+        setRows(items.map((it, i) => ({
+          key: String(i),
           label: it.label,
           status: it.status,
           count: it.count,
           fetchedAt: it.fetchedAt,
           latencyMs: it.latencyMs,
           detail: it.detail
-        }))
-        setRows(next)
+        })))
       }
     }
-
     load()
-    if (auto) {
-      const id = setInterval(load, 30000)
-      return () => { cancel = true; clearInterval(id) }
-    }
     return () => { cancel = true }
-  }, [auto, refreshKey, months])
+  }, [months, refreshKey])
 
   function chip(c:"loading"|"live"|"fallback"|"error"){
     if (c==="live") return "bg-green-100 text-green-700"
@@ -111,13 +101,9 @@ export default function StatusPage() {
     <section className="container py-16 md:py-24">
       <div className="mx-auto max-w-5xl">
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">System status</h1>
-        <p className="mt-3 text-gray-600">Live data feeds and last updated times.</p>
+        <p className="mt-3 text-gray-600">Live data feeds, last updated times, and any error details.</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <div className="card p-2 flex items-center gap-2">
-            <span className="text-sm text-gray-600">Auto-refresh</span>
-            <button onClick={()=>setAuto(a=>!a)} className={`btn ${auto?"btn-primary":"btn-outline"}`}>{auto?"On":"Off"}</button>
-          </div>
           <div className="card p-2 flex items-center gap-2">
             <span className="text-sm text-gray-600">Window</span>
             <button onClick={()=>setMonths(3)} className={`btn ${months===3?"btn-primary":"btn-outline"}`}>3 mo</button>
@@ -128,7 +114,7 @@ export default function StatusPage() {
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {rows.map((r,i)=>(
+          {rows.map((r)=>(
             <div key={r.key} className="card p-4">
               <div className="flex items-center justify-between">
                 <div className="font-semibold">{r.label}</div>
@@ -136,7 +122,7 @@ export default function StatusPage() {
               </div>
               <div className="mt-2 text-sm text-gray-700">Items: {r.count}</div>
               <div className="mt-1 text-xs text-gray-500">{r.fetchedAt ? new Date(r.fetchedAt).toLocaleString() : ""}{r.latencyMs ? ` • ${r.latencyMs} ms` : ""}</div>
-              {r.detail ? <pre className="mt-3 whitespace-pre-wrap text-xs text-gray-600 bg-gray-50 p-2 rounded">{r.detail}</pre> : null}
+              {r.detail ? <pre className="mt-3 whitespace-pre-wrap text-xs text-red-700 bg-red-50 p-2 rounded">{r.detail}</pre> : null}
             </div>
           ))}
         </div>
