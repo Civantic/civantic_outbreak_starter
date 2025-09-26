@@ -41,7 +41,7 @@ function parseStates(val:any){
   return Array.from(out)
 }
 
-async function fetchWithTimeout(url:string, ms=12000) {
+async function fetchWithTimeout(url:string, ms=15000) {
   const ctrl = new AbortController()
   const id = setTimeout(()=>ctrl.abort(), ms)
   try {
@@ -60,7 +60,7 @@ export async function GET(req: Request){
 
   try{
     const base = process.env.FSIS_API_URL || "https://www.fsis.usda.gov/fsis/api/recall/v/1"
-    const r = await fetchWithTimeout(base, 6500)
+    const r = await fetchWithTimeout(base, 15000)
     if (!r.ok) {
       const txt = await r.text()
       const res = NextResponse.json({ data: [], error: true, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` }, { status: 502 })
