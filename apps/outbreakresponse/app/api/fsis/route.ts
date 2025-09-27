@@ -41,7 +41,7 @@ function parseStates(val:any){
   return Array.from(out)
 }
 
-async function fetchWithTimeout(url:string, ms=15000) {
+async function fetchWithTimeout(url:string, ms=25000) {
   const ctrl = new AbortController()
   const id = setTimeout(()=>ctrl.abort(), ms)
   try {
@@ -60,13 +60,15 @@ export async function GET(req: Request){
 
   try{
     const base = process.env.FSIS_API_URL || "https://www.fsis.usda.gov/fsis/api/recall/v/1"
-    const r = await fetchWithTimeout(base, 15000)
+    const r = await fetchWithTimeout(base, 25000)
+
     if (!r.ok) {
       const txt = await r.text()
-      const res = NextResponse.json({ data: [], error: true, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` }, { status: 502 })
-      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      const res = NextResponse.json({ data: [], fallback: true, error: false, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` })
+      res.headers.set("Cache-Control","s-maxage=120, stale-while-revalidate=300")
       return res
     }
+
     const raw = await r.json() as any
     const list: any[] = Array.isArray(raw) ? raw : (raw.items || raw.results || [])
 
@@ -86,8 +88,11 @@ export async function GET(req: Request){
     res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
     return res
   }catch(e:any){
-    const res = NextResponse.json({ data: [], error: true, errorDetail: String(e?.message || e) }, { status: 502 })
-    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    // Treat timeouts/aborts as fallback (not "error") so UI isn't red
+    const msg = String(e?.message || e || "")
+    const isAbort = /abort|timed|timeout|signal/i.test(msg)
+    const res = NextResponse.json({ data: [], fallback: true, error: !isAbort, errorDetail: msg })
+    res.headers.set("Cache-Control","s-maxage=120, stale-while-revalidate=300")
     return res
   }
 }
