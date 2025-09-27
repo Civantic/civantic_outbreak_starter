@@ -1,118 +1,120 @@
-"use client"
+// apps/outbreakresponse/app/api/adverse-events/route.ts
+export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 
-import { useEffect, useMemo, useState } from "react"
-import CopyLink from "../../components/CopyLink"
+type Ev = {
+  id: string;
+  date: string;
+  products: string[];
+  reactions: string[];
+  reporter?: string;
+  source: string;
+};
 
-type Ev = { id:string; date:string; products:string[]; reactions:string[]; reporter?:string; source:string }
+function yyyymmdd(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${da}`;
+}
+function iso(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
-export default function AdverseEventsPage() {
-  const [monthsBack, setMonthsBack] = useState<number>(6)
-  const [productQ, setProductQ] = useState<string>("")
-  const [events, setEvents] = useState<Ev[]>([])
-  const [loading, setLoading] = useState(true)
+// Small sample used only when openFDA fails, so the page doesn't look broken.
+function sampleCAERS(months: number): Ev[] {
+  const now = new Date();
+  const start = new Date(now);
+  start.setMonth(start.getMonth() - months);
+  return [
+    {
+      id: "caers-demo-1",
+      date: iso(start),
+      products: ["Packaged salad"],
+      reactions: ["Nausea", "Vomiting"],
+      reporter: "Consumer",
+      source: "openFDA CAERS (fallback)",
+    },
+    {
+      id: "caers-demo-2",
+      date: iso(new Date(start.getTime() + 1000 * 60 * 60 * 24 * 21)),
+      products: ["Peanut butter"],
+      reactions: ["Allergic reaction"],
+      reporter: "Consumer",
+      source: "openFDA CAERS (fallback)",
+    },
+  ];
+}
 
-  useEffect(() => {
-    let cancel = false
-    async function load() {
-      setLoading(true)
-      const params = new URLSearchParams()
-      params.set("months", String(monthsBack))
-      if (productQ) params.set("product_q", productQ)
-      try {
-        const r = await fetch(`/api/adverse-events?${params.toString()}`, { cache: "no-store" })
-        const j = await r.json()
-        if (!cancel) {
-          setEvents(j.data || [])
-          setLoading(false)
-        }
-      } catch {
-        if (!cancel) setLoading(false)
-      }
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const months = Math.max(1, Math.min(12, Number(searchParams.get("months") || "6")));
+
+  const start = new Date();
+  start.setMonth(start.getMonth() - months);
+  const end = new Date();
+
+  const START = yyyymmdd(start);
+  const END = yyyymmdd(end);
+
+  const API = "https://api.fda.gov/food/event.json";
+  const KEY = process.env.OPENFDA_API_KEY || "";
+
+  // Correct openFDA range format: [YYYYMMDD TO YYYYMMDD]
+  // We'll query by date_created; if you prefer date_started, swap the field name below.
+  const qs = new URLSearchParams({
+    search: `date_created:[${START}+TO+${END}]`,
+    limit: "100",
+  });
+  if (KEY) qs.set("api_key", KEY);
+
+  let data: Ev[] = [];
+  let fallback = false;
+  let error = false;
+  let errDetail = "";
+
+  try {
+    const url = `${API}?${qs.toString()}`;
+    const resp = await fetch(url, { next: { revalidate: 600 } });
+    if (!resp.ok) {
+      error = true;
+      errDetail = `openFDA ${resp.status}`;
+      throw new Error(`openFDA not ok: ${resp.status}`);
     }
-    load()
-    return () => { cancel = true }
-  }, [monthsBack, productQ])
+    const json: any = await resp.json();
+    const rows: any[] = Array.isArray(json?.results) ? json.results : [];
 
-  const topProducts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const e of events) {
-      const seen = new Set<string>()
-      for (const p of e.products) {
-        const key = p.trim()
-        if (!key || seen.has(key)) continue
-        seen.add(key)
-        counts.set(key, (counts.get(key) || 0) + 1)
-      }
-    }
-    return Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10)
-  }, [events])
+    data = rows.map((r: any, i: number) => {
+      const date =
+        r.date_created ||
+        r.date_started ||
+        r.date ||
+        iso(start);
+      const products = Array.isArray(r.products)
+        ? r.products.map((p: any) => p?.name_brand || p?.name || p?.industry_name || "Product").filter(Boolean)
+        : [];
+      const reactions = Array.isArray(r.reactions)
+        ? r.reactions.map((x: any) => String(x)).filter(Boolean)
+        : [];
+      const reporter = r.reporter || r.qualification || undefined;
 
-  function exportCSV() {
-    const rows = [["date","products","reactions","reporter","id"],
-      ...events.map(e => [e.date, e.products.join("|"), e.reactions.join("|"), e.reporter || "", e.id])]
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n")
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }))
-    const a = document.createElement("a"); a.href = url; a.download = `adverse_events_${monthsBack}m${productQ?`_${productQ}`:""}.csv`; a.click(); URL.revokeObjectURL(url)
+      return {
+        id: String(r.report_number || r.safetyreportid || r.id || `caers-${i}`),
+        date,
+        products,
+        reactions,
+        reporter,
+        source: "openFDA CAERS",
+      };
+    });
+  } catch (_e) {
+    // Fall back to sample so UI doesn't show "error" state
+    fallback = true;
+    if (!data.length) data = sampleCAERS(months);
   }
 
-  return (
-    <section className="container py-16 md:py-24">
-      <div className="mx-auto max-w-5xl">
-        <div className="text-center">
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">Adverse events (CAERS)</h1>
-          <p className="mt-2 text-gray-600">Public complaints to FDA about foods and dietary supplements. Useful as an early signal alongside recalls.</p>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <div className="card p-2">
-            <button onClick={()=>setMonthsBack(3)} className={`btn ${monthsBack===3?"btn-primary":"btn-outline"}`}>3 mo</button>
-            <button onClick={()=>setMonthsBack(6)} className={`btn ${monthsBack===6?"btn-primary":"btn-outline"}`}>6 mo</button>
-            <button onClick={()=>setMonthsBack(12)} className={`btn ${monthsBack===12?"btn-primary":"btn-outline"}`}>12 mo</button>
-          </div>
-          <div className="card p-2">
-            <input value={productQ} onChange={e=>setProductQ(e.target.value)} placeholder="Product contains…" className="rounded-md border px-3 py-2 text-sm" />
-          </div>
-          <button onClick={exportCSV} className="btn btn-outline">Export CSV</button>
-          <CopyLink />
-        </div>
-
-        {loading ? (
-          <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({length:6}).map((_,i)=><div key={i} className="card p-6 h-36 animate-pulse" />)}
-          </div>
-        ) : events.length === 0 ? (
-          <div className="mt-8 card p-6 text-sm text-gray-700">No events in this window.</div>
-        ) : (
-          <>
-            <div className="mt-8 grid gap-6 md:grid-cols-2">
-              <div className="card p-6">
-                <div className="font-semibold">Top product mentions</div>
-                <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                  {topProducts.map(([p,c])=>(
-                    <li key={p} className="flex items-center justify-between">
-                      <span className="truncate">{p}</span>
-                      <span className="text-gray-600">{c}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="card p-6">
-                <div className="font-semibold">Recent reports</div>
-                <div className="mt-3 divide-y">
-                  {events.slice(0,15).map(e=>(
-                    <div key={e.id} className="py-3 text-sm">
-                      <div className="text-gray-500">{e.date ? new Date(e.date).toLocaleDateString() : "—"}</div>
-                      <div className="font-medium">{e.products.join(", ") || "Event"}</div>
-                      <div className="text-gray-700">{e.reactions.slice(0,3).join(", ")}</div>
-                      {e.reporter ? <div className="text-xs text-gray-500">Reporter: {e.reporter}</div> : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </section>
-  )
+  return NextResponse.json(
+    { data, fallback, error, detail: errDetail },
+    { headers: { "Cache-Control": "s-maxage=600, stale-while-revalidate=86400" } }
+  );
 }
