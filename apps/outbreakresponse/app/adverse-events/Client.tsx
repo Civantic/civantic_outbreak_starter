@@ -44,9 +44,7 @@ export default function AdverseEventsClient() {
       }
     }
     load()
-    return () => {
-      cancel = true
-    }
+    return () => { cancel = true }
   }, [monthsBack])
 
   const filtered = useMemo(() => {
