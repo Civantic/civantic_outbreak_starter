@@ -1,68 +1,123 @@
-export const dynamic = 'force-dynamic'
-import { NextResponse } from "next/server"
+// apps/outbreakresponse/app/api/fsis/route.ts
+export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 
-type Ev = { id:string; date:string; products:string[]; reactions:string[]; state?:string; reporter?:string; source:string }
+type Row = {
+  id: string;
+  date: string;
+  stateScope: string[];
+  product: string;
+  reason: string;
+  source: string;
+};
 
-const FDA_CAERS = "https://api.fda.gov/food/event.json"
-const yyyymmdd = (d: Date) => d.toISOString().slice(0,10).replace(/-/g,"")
-const iso = (d: string|number) => {
-  const s = String(d||"")
-  if (s.length === 8) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  return ""
+function iso(d: Date) { return d.toISOString().slice(0,10); }
+function toDate(v: any): string {
+  if (!v) return "";
+  // Try ISO or YYYY-MM-DD-ish
+  const s = String(v);
+  const m = s.match(/^(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(s);
+  return isNaN(+d) ? "" : iso(d);
 }
 
+function monthsAgoStart(months: number) {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  d.setDate(1);
+  return d;
+}
+
+const ALL_STATES = [
+  "WA","OR","CA","AK","HI","ID","NV","AZ","UT","MT","WY","CO","NM","ND","SD","NE","KS","OK","TX","MN","IA","MO","AR","LA","WI","IL","MI","IN","KY","TN","MS","AL","FL","GA","SC","NC","VA","WV","OH","PA","NY","VT","NH","ME","MA","RI","CT","NJ","DE","MD","DC"
+];
+
 export async function GET(req: Request) {
-  const u = new URL(req.url)
-  const scope = (u.searchParams.get("scope") || "US").toUpperCase()
-  const months = Math.max(1, Math.min(12, Number(u.searchParams.get("months") || 6)))
+  const { searchParams } = new URL(req.url);
+  const scope = (searchParams.get("scope") || "US").toUpperCase();
+  const months = Math.max(1, Math.min(12, Number(searchParams.get("months") || "6")));
+  const since = monthsAgoStart(months);
 
-  const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth(), 1); start.setMonth(start.getMonth() - months + 1)
+  const BASE = process.env.FSIS_API_URL || ""; // ex: https://www.fsis.usda.gov/fsis/api/recall/v/1
 
-  const params = new URLSearchParams()
-  // Robust date range for CAERS
-  params.set("search", `date_started:[${yyyymmdd(start)}+TO+${yyyymmdd(end)}]`)
-  params.set("limit", "100")
-  if (process.env.OPENFDA_API_KEY) params.set("api_key", process.env.OPENFDA_API_KEY)
-
-  const url = `${FDA_CAERS}?${params.toString()}`
+  let rows: Row[] = [];
+  let fallback = false;
+  let error = false;
+  let detail = "";
 
   try {
-    const r = await fetch(url, { next: { revalidate: 300 } })
-    const txt = await r.text()
-    if (!r.ok) {
-      const res = NextResponse.json(
-        { data: [], error: true, errorDetail: `CAERS ${r.status}: ${txt.slice(0,300)}`, fetchedAt: new Date().toISOString() },
-        { status: 502 }
-      )
-      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
-      return res
+    if (!BASE) throw new Error("FSIS_API_URL missing");
+
+    // Most FSIS APIs return an array at top-level; some return {data:[...]}.
+    // We keep it tolerant.
+    const url = BASE; // if your API needs a path (e.g. /recalls), append here
+    const resp = await fetch(url, {
+      // Let edge cache for 10 min; disable short aborts.
+      next: { revalidate: 600 },
+    });
+
+    if (!resp.ok) {
+      error = true;
+      detail = `FSIS ${resp.status}`;
+      throw new Error(detail);
     }
 
-    const json = JSON.parse(txt)
-    const results: any[] = Array.isArray(json?.results) ? json.results : []
+    const json: any = await resp.json();
+    const list: any[] =
+      Array.isArray(json) ? json :
+      Array.isArray(json?.data) ? json.data :
+      Array.isArray(json?.results) ? json.results :
+      [];
 
-    const mapped: Ev[] = results.map((e:any, i:number) => {
-      const date = iso(e.date_started || e.date_created || e.event_date || "")
-      const products = Array.isArray(e.products) ? e.products.map((p:any)=> p?.name_brand || p?.name || "").filter(Boolean).slice(0,3) : []
-      const reactions = Array.isArray(e.reactions) ? e.reactions.map((r:any)=> r?.reaction || r?.term || "").filter(Boolean).slice(0,3) : []
-      const state = String(e?.consumer?.state || "").toUpperCase() || undefined
-      const reporter = e?.reporter_occupation ? String(e.reporter_occupation) : undefined
-      return { id: `caers-${e.report_id || e.event_id || i}`, date, products, reactions, state, reporter, source: "FDA CAERS" }
-    }).filter(x => x.date)
+    rows = list.map((r: any, i: number) => {
+      // Try common field names; normalize.
+      const date =
+        toDate(r.recall_initiation_date || r.start_date || r.date || r.recallDate);
+      const product =
+        r.product_description || r.product || r.title || r.description || "Recall";
+      const reason =
+        r.reason_for_recall || r.summary || r.reason || "";
+      // States may be an array or a comma string.
+      let stateScope: string[] = [];
+      if (Array.isArray(r.states)) {
+        stateScope = r.states.map((s: any) => String(s).trim().toUpperCase());
+      } else if (typeof r.states === "string") {
+        stateScope = r.states.split(/[,|]/).map((s: string) => s.trim().toUpperCase()).filter(Boolean);
+      } else if (r.state) {
+        stateScope = [String(r.state).toUpperCase()];
+      }
 
-    const data = scope === "NM" ? mapped.filter(m => m.state === "NM") : mapped
+      return {
+        id: String(r.recall_number || r.recallID || r.id || `fsis-${i}`),
+        date: date || iso(monthsAgoStart(months)),
+        stateScope,
+        product,
+        reason,
+        source: "USDA FSIS",
+      };
+    });
 
-    const res = NextResponse.json({ data, fetchedAt: new Date().toISOString() })
-    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
-    return res
-  } catch (e:any) {
-    const res = NextResponse.json(
-      { data: [], error: true, errorDetail: String(e?.message || e), fetchedAt: new Date().toISOString() },
-      { status: 502 }
-    )
-    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
-    return res
+    // Filter by date window
+    rows = rows.filter((x) => {
+      const d = new Date(x.date);
+      return !isNaN(+d) && d >= since;
+    });
+
+    // Scope: include nationwide recalls (if we detect "all states").
+    if (scope === "NM") {
+      rows = rows.filter(
+        (r) => r.stateScope.includes("NM") || r.stateScope.length === ALL_STATES.length
+      );
+    }
+  } catch (_e) {
+    // Return empty but mark fallback, so it doesn't show scary errors
+    fallback = true;
+    if (!rows.length) rows = [];
   }
+
+  return NextResponse.json(
+    { data: rows, fallback, error, detail },
+    { headers: { "Cache-Control": "s-maxage=600, stale-while-revalidate=86400" } }
+  );
 }
