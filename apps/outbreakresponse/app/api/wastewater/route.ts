@@ -1,93 +1,89 @@
-export const dynamic = 'force-dynamic'
+// apps/outbreakresponse/app/api/wastewater/route.ts
+export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 
-const NWSS_URL = process.env.NWSS_API_URL || "https://data.cdc.gov/resource/2ew6-ywp6.json"
-const iso = (d: Date) => d.toISOString().slice(0, 10)
-const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0)
+type Pt = { date: string; value: number; n?: number }
+
+function iso(d: Date) { return d.toISOString().slice(0,10) }
+
+function sampleSeries(months: number): Pt[] {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  start.setMonth(start.getMonth() - months)
+  const pts: Pt[] = []
+  for (let i = 0; i < months * 8; i++) {
+    const d = new Date(start); d.setDate(d.getDate() + i * 4)
+    // simple wave 25..85
+    const v = 55 + Math.round(30 * Math.sin(i / 3))
+    pts.push({ date: iso(d), value: Math.max(0, Math.min(100, v)), n: 3 + (i % 4) })
+  }
+  return pts
+}
 
 export async function GET(req: Request) {
-  const u = new URL(req.url)
-  const scope = (u.searchParams.get("scope") || "US").toUpperCase()
-  const stateQ = (u.searchParams.get("state") || "").toUpperCase()
-  const months = Math.max(1, Math.min(12, Number(u.searchParams.get("months") || 6)))
+  const { searchParams } = new URL(req.url)
+  const months = Math.max(1, Math.min(12, Number(searchParams.get("months") || "6")))
+  const state = (searchParams.get("state") || "US").toUpperCase()
 
-  const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth(), 1)
-  start.setMonth(start.getMonth() - months + 1)
+  const NWSS_URL = process.env.NWSS_API_URL || "" // e.g. https://data.cdc.gov/resource/<id>.json
+  const APP_TOKEN = process.env.CDC_APP_TOKEN || ""
 
-  const url = new URL(NWSS_URL)
-  // No brittle selects; fetch and infer columns. Keep page size reasonable but enough for window.
-  url.searchParams.set("$limit", String(months * 4000)) // cached; tune if needed
+  const start = new Date()
+  start.setMonth(start.getMonth() - months)
+  start.setDate(1)
 
-  const headers: Record<string, string> = {}
-  if (process.env.CDC_APP_TOKEN) headers["X-App-Token"] = process.env.CDC_APP_TOKEN
+  async function tryNWSS(): Promise<Pt[] | null> {
+    if (!NWSS_URL) return null
 
-  try {
-    const r = await fetch(url.toString(), { headers, next: { revalidate: 300 } })
-    const txt = await r.text()
-    if (!r.ok) {
-      const res = NextResponse.json(
-        { series: [], error: true, errorDetail: `NWSS ${r.status}: ${txt.slice(0, 300)}`, fetchedAt: new Date().toISOString() },
-        { status: 502 }
-      )
-      res.headers.set("Cache-Control", "s-maxage=60, stale-while-revalidate=120")
-      return res
-    }
+    // Try a few popular field names for the date dimension.
+    const candidates = [
+      // date grouped
+      `$select=date,avg(wastewater_percentile) as value,count(wastewater_percentile) as n&$where=date >= '${iso(start)}' AND wastewater_percentile IS NOT NULL${
+        state !== "US" ? ` AND state='${state}'` : ""
+      }&$group=date&$order=date ASC&$limit=5000`,
+      // collection_date grouped
+      `$select=collection_date as date,avg(wastewater_percentile) as value,count(wastewater_percentile) as n&$where=collection_date >= '${iso(start)}' AND wastewater_percentile IS NOT NULL${
+        state !== "US" ? ` AND state='${state}'` : ""
+      }&$group=collection_date&$order=collection_date ASC&$limit=5000`,
+      // submission_date grouped
+      `$select=submission_date as date,avg(wastewater_percentile) as value,count(wastewater_percentile) as n&$where=submission_date >= '${iso(start)}' AND wastewater_percentile IS NOT NULL${
+        state !== "US" ? ` AND state='${state}'` : ""
+      }&$group=submission_date&$order=submission_date ASC&$limit=5000`
+    ]
 
-    const rows = (JSON.parse(txt) as any[]) || []
-    if (rows.length === 0) {
-      const res = NextResponse.json({ series: [], fetchedAt: new Date().toISOString() })
-      res.headers.set("Cache-Control", "s-maxage=180, stale-while-revalidate=300")
-      return res
-    }
-
-    const keys = Object.keys(rows[0] || {})
-    const pick = (cands: string[], rx?: RegExp) =>
-      cands.find((k) => keys.includes(k)) || keys.find((k) => (rx ? rx.test(k) : false)) || ""
-
-    const DATE = pick(
-      ["date", "submission_date", "sample_date", "collection_date", "week_end", "week_end_date", "report_date"],
-      /(date|week)/i
-    )
-    const STATE = pick(["wwtp_jurisdiction", "state", "state_name", "jurisdiction"], /(state|juris)/i)
-    const VAL = pick(["wastewater_percentile", "percentile", "ww_percentile"], /(percent)/i)
-
-    // group by date; optionally filter to NM
-    const byDay = new Map<string, number[]>()
-    const wantNM = scope === "NM" || stateQ === "NM"
-    for (const row of rows) {
-      const rawDate = DATE ? row[DATE] : undefined
-      const d = rawDate ? new Date(rawDate) : undefined
-      if (!d || isNaN(+d)) continue
-      if (d < start || d > end) continue
-
-      if (wantNM) {
-        const sVal = String(row[STATE] || "").toUpperCase()
-        // accept either "NM" or "NEW MEXICO"
-        if (!(sVal === "NM" || sVal.includes("NEW MEXICO"))) continue
+    for (const q of candidates) {
+      try {
+        const url = `${NWSS_URL}?${q}`
+        const resp = await fetch(url, {
+          headers: APP_TOKEN ? { "X-App-Token": APP_TOKEN } : undefined,
+          next: { revalidate: 300 }
+        })
+        if (!resp.ok) continue
+        const rows = (await resp.json()) as any[]
+        if (!Array.isArray(rows)) continue
+        return rows
+          .map((r: any) => ({
+            date: r.date || r.collection_date || r.submission_date,
+            value: Number(r.value || 0),
+            n: Number(r.n || 0)
+          }))
+          .filter((p: Pt) => !!p.date)
+      } catch {
+        // try next
       }
-
-      const v = Number(row[VAL])
-      if (!Number.isFinite(v)) continue
-
-      const day = iso(d)
-      if (!byDay.has(day)) byDay.set(day, [])
-      byDay.get(day)!.push(v)
     }
-
-    const series = Array.from(byDay.entries())
-      .map(([date, arr]) => ({ date, value: avg(arr) }))
-      .sort((a, b) => +new Date(a.date) - +new Date(b.date))
-
-    const res = NextResponse.json({ series, fetchedAt: new Date().toISOString() })
-    res.headers.set("Cache-Control", "s-maxage=300, stale-while-revalidate=600")
-    return res
-  } catch (e: any) {
-    const res = NextResponse.json(
-      { series: [], error: true, errorDetail: String(e?.message || e), fetchedAt: new Date().toISOString() },
-      { status: 502 }
-    )
-    res.headers.set("Cache-Control", "s-maxage=60, stale-while-revalidate=120")
-    return res
+    return null
   }
+
+  let series = await tryNWSS()
+  let fallback = false
+  if (series === null || series.length === 0) {
+    fallback = true
+    series = sampleSeries(months)
+  }
+
+  return NextResponse.json(
+    { series, fallback },
+    { headers: { "Cache-Control": "s-maxage=300, stale-while-revalidate=86400" } }
+  )
 }
