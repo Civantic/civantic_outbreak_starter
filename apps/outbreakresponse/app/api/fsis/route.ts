@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 
 type Row = { id:string; date:string; stateScope:string[]; product:string; reason:string; source:string }
 
+// US states list + DC
 const STATES:[string,string][]= [
   ["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],
   ["FL","Florida"],["GA","Georgia"],["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],["KS","Kansas"],["KY","Kentucky"],
@@ -41,11 +42,11 @@ function parseStates(val:any){
   return Array.from(out)
 }
 
-async function fetchWithTimeout(url:string, ms=25000) {
+async function fetchWithTimeout(url:string, ms=9000) {
   const ctrl = new AbortController()
   const id = setTimeout(()=>ctrl.abort(), ms)
   try {
-    return await fetch(url, { signal: ctrl.signal, next: { revalidate: 300 } })
+    return await fetch(url, { signal: ctrl.signal, next: { revalidate: 300 }, headers: { "Accept": "application/json" } })
   } finally {
     clearTimeout(id)
   }
@@ -58,20 +59,42 @@ export async function GET(req: Request){
   const end = new Date()
   const start = new Date(end); start.setMonth(end.getMonth() - months)
 
-  try{
-    const base = process.env.FSIS_API_URL || "https://www.fsis.usda.gov/fsis/api/recall/v/1"
-    const r = await fetchWithTimeout(base, 25000)
+  const base = (process.env.FSIS_API_URL || "https://www.fsis.usda.gov/fsis/api/recall/v/1").replace(/\/+$/,"")
 
-    if (!r.ok) {
-      const txt = await r.text()
-      const res = NextResponse.json({ data: [], fallback: true, error: false, errorDetail: `FSIS ${r.status}: ${txt.slice(0,300)}` })
+  try{
+    // Try a smaller payload variant first (if API supports it), then fall back to base
+    const tryUrls = [
+      `${base}?limit=200`,
+      base
+    ]
+
+    let raw: any = null
+    let lastStatus = 0
+    let lastText = ""
+
+    for (const url of tryUrls) {
+      try {
+        const r = await fetchWithTimeout(url, 9000)
+        lastStatus = r.status
+        if (!r.ok) {
+          lastText = await r.text()
+          continue
+        }
+        raw = await r.json()
+        break
+      } catch (e:any) {
+        lastText = String(e?.message || e || "")
+        // try next
+      }
+    }
+
+    if (!raw) {
+      const res = NextResponse.json({ data: [], fallback: true, error: false, errorDetail: `FSIS ${lastStatus}: ${lastText.slice(0,300)}` })
       res.headers.set("Cache-Control","s-maxage=120, stale-while-revalidate=300")
       return res
     }
 
-    const raw = await r.json() as any
     const list: any[] = Array.isArray(raw) ? raw : (raw.items || raw.results || [])
-
     let rows: Row[] = list.map((x:any) => ({
       id: x.recall_number || x.id || x.recall_id || x.event_id || crypto.randomUUID(),
       date: toISO(x.recall_initiation_date || x.recall_date || x.start_date || x.date),
@@ -85,13 +108,11 @@ export async function GET(req: Request){
     if (scope === "NM") rows = rows.filter(r => r.stateScope.includes("NM") || r.stateScope.length === ALL.length)
 
     const res = NextResponse.json({ data: rows, fetchedAt: new Date().toISOString() })
-    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    res.headers.set("Cache-Control","s-maxage=600, stale-while-revalidate=900")
     return res
   }catch(e:any){
-    // Treat timeouts/aborts as fallback (not "error") so UI isn't red
     const msg = String(e?.message || e || "")
-    const isAbort = /abort|timed|timeout|signal/i.test(msg)
-    const res = NextResponse.json({ data: [], fallback: true, error: !isAbort, errorDetail: msg })
+    const res = NextResponse.json({ data: [], fallback: true, error: false, errorDetail: msg })
     res.headers.set("Cache-Control","s-maxage=120, stale-while-revalidate=300")
     return res
   }
