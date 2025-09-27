@@ -15,7 +15,7 @@ export async function GET(req:Request){
 
   const base = process.env.NWSS_API_URL || "https://data.cdc.gov/resource/2ew6-ywp6.json"
   const url = new URL(base)
-  // Many NWSS tables expose 'date' (not 'submission_date')
+  // many tables expose 'date', not 'submission_date'
   const whereParts = [
     `date >= '${iso(start)}'`,
     `wastewater_percentile IS NOT NULL`,
