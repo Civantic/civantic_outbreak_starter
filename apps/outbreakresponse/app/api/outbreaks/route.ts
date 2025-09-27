@@ -28,11 +28,10 @@ export async function GET(req: Request) {
   const scope = (u.searchParams.get("scope") || "US").toUpperCase()
   const months = Math.max(1, Math.min(12, Number(u.searchParams.get("months") || 6)))
   const end = new Date()
-  const start = new Date(end.getFullYear(), end.getMonth(), 1)
-  start.setMonth(start.getMonth() - months + 1)
+  const start = new Date(end.getFullYear(), end.getMonth(), 1); start.setMonth(start.getMonth() - months + 1)
 
   const url = new URL(CDC)
-  // Select only columns that actually exist on the dataset
+  // only columns that exist in 5xkq-dg7x
   url.searchParams.set("$select", "year,month,state,etiology,illnesses,hospitalizations,deaths,incident_id,outbreak_id")
   url.searchParams.set("$where", `year >= ${start.getFullYear()}`)
   url.searchParams.set("$limit", "5000")
