@@ -1,87 +1,68 @@
+export const dynamic = 'force-dynamic'
 import { NextResponse } from "next/server"
 
-type EventRow = {
-  id: string
-  date: string
-  products: string[]
-  reactions: string[]
-  reporter?: string
-  source: "openFDA-CAERS"
-}
+type Ev = { id:string; date:string; products:string[]; reactions:string[]; state?:string; reporter?:string; source:string }
 
-function ymd(d: Date) {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`
+const FDA_CAERS = "https://api.fda.gov/food/event.json"
+const yyyymmdd = (d: Date) => d.toISOString().slice(0,10).replace(/-/g,"")
+const iso = (d: string|number) => {
+  const s = String(d||"")
+  if (s.length === 8) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  return ""
 }
 
 export async function GET(req: Request) {
   const u = new URL(req.url)
+  const scope = (u.searchParams.get("scope") || "US").toUpperCase()
   const months = Math.max(1, Math.min(12, Number(u.searchParams.get("months") || 6)))
-  const productQ = (u.searchParams.get("product_q") || "").trim()
-  const limit = Math.max(1, Math.min(250, Number(u.searchParams.get("limit") || 200)))
 
   const end = new Date()
-  const start = new Date(end)
-  start.setMonth(end.getMonth() - months)
+  const start = new Date(end.getFullYear(), end.getMonth(), 1); start.setMonth(start.getMonth() - months + 1)
 
-  // Build a single openFDA `search` string with OR across date fields.
-  const parts: string[] = []
-  const dateRange = `[${ymd(start)}+TO+${ymd(end)}]`
-  parts.push(`(date_created:${dateRange}+OR+date_started:${dateRange})`)
+  const params = new URLSearchParams()
+  // Robust date range for CAERS
+  params.set("search", `date_started:[${yyyymmdd(start)}+TO+${yyyymmdd(end)}]`)
+  params.set("limit", "100")
+  if (process.env.OPENFDA_API_KEY) params.set("api_key", process.env.OPENFDA_API_KEY)
 
-  if (productQ) {
-    const q = encodeURIComponent(productQ)
-    // try multiple product fields
-    parts.push(
-      `(${[
-        `products.name_brand:"${q}"`,
-        `products.name:"${q}"`,
-        `products.industry_name:"${q}"`,
-        `products.industry_code:"${q}"`
-      ].join("+OR+")})`
-    )
-  }
-
-  const search = parts.join("+AND+")
-  const qs = new URLSearchParams()
-  qs.set("search", search)
-  qs.set("limit", String(limit))
-  const key = process.env.OPENFDA_API_KEY
-  if (key) qs.set("api_key", key)
-
-  const url = `https://api.fda.gov/food/event.json?${qs.toString()}`
+  const url = `${FDA_CAERS}?${params.toString()}`
 
   try {
-    const r = await fetch(url, { next: { revalidate: 1800 } })
-    if (!r.ok) throw new Error(String(r.status))
-    const j = await r.json() as any
-    const items: any[] = Array.isArray(j?.results) ? j.results : []
-
-    let rows: EventRow[] = items.map((ev: any) => {
-      const id = String(ev.report_number || ev.recall_number || crypto.randomUUID())
-      const dateRaw = String(ev.date_created || ev.date_started || ev.event_date || "")
-      const date = dateRaw.length === 8 ? `${dateRaw.slice(0,4)}-${dateRaw.slice(4,6)}-${dateRaw.slice(6,8)}` : dateRaw.slice(0,10)
-      const prods = Array.isArray(ev.products)
-        ? ev.products.map((p: any) => p?.brand_name || p?.name_brand || p?.name || p?.industry_name || "").filter(Boolean)
-        : []
-      const reacts = Array.isArray(ev.reactions) ? ev.reactions.map((rr: any) => String(rr || "")) : []
-      const reporter = ev.reporter_occupation || ev.occupation || undefined
-      return { id, date, products: prods, reactions: reacts, reporter, source: "openFDA-CAERS" }
-    })
-
-    if (rows.length === 0) {
-      const demo: EventRow[] = [
-        { id: "demo1", date: "2025-07-30", products: ["Soft cheese"], reactions: ["GI upset", "Fever"], reporter: "Consumer", source: "openFDA-CAERS" },
-        { id: "demo2", date: "2025-07-18", products: ["Frozen berries"], reactions: ["Nausea"], reporter: "Healthcare professional", source: "openFDA-CAERS" }
-      ]
-      return NextResponse.json({ data: demo, fallback: true, fetchedAt: new Date().toISOString() })
+    const r = await fetch(url, { next: { revalidate: 300 } })
+    const txt = await r.text()
+    if (!r.ok) {
+      const res = NextResponse.json(
+        { data: [], error: true, errorDetail: `CAERS ${r.status}: ${txt.slice(0,300)}`, fetchedAt: new Date().toISOString() },
+        { status: 502 }
+      )
+      res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+      return res
     }
 
-    return NextResponse.json({ data: rows, fetchedAt: new Date().toISOString() })
-  } catch {
-    const demo: EventRow[] = [
-      { id: "demo1", date: "2025-07-30", products: ["Soft cheese"], reactions: ["GI upset", "Fever"], reporter: "Consumer", source: "openFDA-CAERS" },
-      { id: "demo2", date: "2025-07-18", products: ["Frozen berries"], reactions: ["Nausea"], reporter: "Healthcare professional", source: "openFDA-CAERS" }
-    ]
-    return NextResponse.json({ data: demo, fallback: true, fetchedAt: new Date().toISOString() })
+    const json = JSON.parse(txt)
+    const results: any[] = Array.isArray(json?.results) ? json.results : []
+
+    const mapped: Ev[] = results.map((e:any, i:number) => {
+      const date = iso(e.date_started || e.date_created || e.event_date || "")
+      const products = Array.isArray(e.products) ? e.products.map((p:any)=> p?.name_brand || p?.name || "").filter(Boolean).slice(0,3) : []
+      const reactions = Array.isArray(e.reactions) ? e.reactions.map((r:any)=> r?.reaction || r?.term || "").filter(Boolean).slice(0,3) : []
+      const state = String(e?.consumer?.state || "").toUpperCase() || undefined
+      const reporter = e?.reporter_occupation ? String(e.reporter_occupation) : undefined
+      return { id: `caers-${e.report_id || e.event_id || i}`, date, products, reactions, state, reporter, source: "FDA CAERS" }
+    }).filter(x => x.date)
+
+    const data = scope === "NM" ? mapped.filter(m => m.state === "NM") : mapped
+
+    const res = NextResponse.json({ data, fetchedAt: new Date().toISOString() })
+    res.headers.set("Cache-Control","s-maxage=300, stale-while-revalidate=600")
+    return res
+  } catch (e:any) {
+    const res = NextResponse.json(
+      { data: [], error: true, errorDetail: String(e?.message || e), fetchedAt: new Date().toISOString() },
+      { status: 502 }
+    )
+    res.headers.set("Cache-Control","s-maxage=60, stale-while-revalidate=120")
+    return res
   }
 }
